@@ -2,8 +2,9 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
-	"EffectiveMobileTest/subscriptions-service/internal/model"
+	"EffectiveMobileTest/internal/model"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,43 +18,11 @@ func NewSubscriptionRepository(db *pgxpool.Pool) *SubscriptionRepository {
 	return &SubscriptionRepository{db: db}
 }
 
-func (r *SubscriptionRepository) Create(ctx context.Context, sub *model.Subscription) error {
-	query := `
-		INSERT INTO subscriptions (
-			id,
-			service_name,
-			price,
-			user_id,
-			start_date,
-    		end_date
-		) VALUES ($1, $2, $3, $4, $5, $6)
-	`
-
-	_, err := r.db.Exec(
-		ctx,
-		query,
-		sub.ID,
-		sub.ServiceName,
-		sub.Price,
-		sub.UserID,
-		sub.StartDate,
-		sub.EndDate,
-	)
-
-	return err
-}
-
-func (r *SubscriptionRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Subscription, error) {
-	query := `
-		SELECT id, service_name, price, user_id,
-               start_date, end_date, created_at, updated_at
-        FROM subscriptions
-        WHERE id = $1
-	`
-
+func scanSubscription(scanner interface {
+	Scan(dest ...interface{}) error
+}) (*model.Subscription, error) {
 	var sub model.Subscription
-
-	err := r.db.QueryRow(ctx, query, id).Scan(
+	err := scanner.Scan(
 		&sub.ID,
 		&sub.ServiceName,
 		&sub.Price,
@@ -63,102 +32,138 @@ func (r *SubscriptionRepository) GetByID(ctx context.Context, id uuid.UUID) (*mo
 		&sub.CreatedAt,
 		&sub.UpdatedAt,
 	)
-
 	if err != nil {
 		return nil, err
 	}
-
 	return &sub, nil
 }
 
-func (r *SubscriptionRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.Exec(
-		ctx,
-		`DELETE FROM subscriptions WHERE id = $1`,
-		id,
+func (r *SubscriptionRepository) Create(ctx context.Context, sub *model.Subscription) error {
+	query := `
+		INSERT INTO subscriptions (id, service_name, price, user_id, start_date, end_date)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`
+	_, err := r.db.Exec(ctx, query,
+		sub.ID, sub.ServiceName, sub.Price, sub.UserID, sub.StartDate, sub.EndDate,
 	)
-
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to create subscription: %w", err)
+	}
+	return nil
 }
 
-func (r *SubscriptionRepository) List(ctx context.Context) ([]model.Subscription, error) {
+func (r *SubscriptionRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Subscription, error) {
 	query := `
-		SELECT id, service_name, price, user_id,
-               start_date, end_date, created_at, updated_at
+		SELECT id, service_name, price, user_id, start_date, end_date, created_at, updated_at
+		FROM subscriptions
+		WHERE id = $1
+	`
+	sub, err := scanSubscription(r.db.QueryRow(ctx, query, id))
+	if err != nil {
+		return nil, fmt.Errorf("subscription not found: %w", err)
+	}
+	return sub, nil
+}
+
+func (r *SubscriptionRepository) Update(ctx context.Context, sub *model.Subscription) error {
+	query := `
+		UPDATE subscriptions
+		SET service_name = $2, price = $3, end_date = $4, updated_at = NOW()
+		WHERE id = $1
+	`
+	result, err := r.db.Exec(ctx, query, sub.ID, sub.ServiceName, sub.Price, sub.EndDate)
+	if err != nil {
+		return fmt.Errorf("failed to update subscription: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("subscription not found")
+	}
+	return nil
+}
+
+func (r *SubscriptionRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	query := `DELETE FROM subscriptions WHERE id = $1`
+	result, err := r.db.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete subscription: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("subscription not found")
+	}
+	return nil
+}
+
+func (r *SubscriptionRepository) List(ctx context.Context, limit int, offset int) ([]model.Subscription, error) {
+	query := `
+		SELECT id, service_name, price, user_id, start_date, end_date, created_at, updated_at
 		FROM subscriptions
 		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2
 	`
-
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
 	}
 	defer rows.Close()
 
-	var subscriptions []model.Subscription
-
+	var subs []model.Subscription
 	for rows.Next() {
-		var sub model.Subscription
-
-		err := rows.Scan(
-			&sub.ID,
-			&sub.ServiceName,
-			&sub.Price,
-			&sub.UserID,
-			&sub.StartDate,
-			&sub.CreatedAt,
-			&sub.UpdatedAt,
-		)
+		sub, err := scanSubscription(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan subscription: %w", err)
 		}
-
-		subscriptions = append(subscriptions, sub)
+		subs = append(subs, *sub)
 	}
-
-	return subscriptions, nil
+	return subs, nil
 }
 
-func (r *SubscriptionRepository) GetForCalculation(
-	ctx context.Context,
-	userID string,
-	serviceName string,
-) ([]model.Subscription, error) {
-	query := `
-		SELECT id, service_name, price, user_id,
-               start_date, end_date, created_at, updated_at
-		FROM subscriptions
-		WHERE ($1 = '' OR user_id::text = $1)
-		AND ($2 = '' OR service_name = $2)
-	`
-
-	rows, err := r.db.Query(ctx, query, userID, serviceName)
+func (r *SubscriptionRepository) Count(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, "SELECT COUNT(*) FROM subscriptions").Scan(&count)
 	if err != nil {
-		return nil, err
+		return 0, fmt.Errorf("failed to count subscriptions: %w", err)
+	}
+	return count, nil
+}
+
+func (r *SubscriptionRepository) GetForCalculation(ctx context.Context, userID string, serviceName string) ([]model.Subscription, error) {
+	query := `
+		SELECT id, service_name, price, user_id, start_date, end_date, created_at, updated_at
+		FROM subscriptions
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argIdx := 1
+
+	if userID != "" {
+		parsedID, err := uuid.Parse(userID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid user_id: %w", err)
+		}
+		query += fmt.Sprintf(" AND user_id = $%d", argIdx)
+		args = append(args, parsedID)
+		argIdx++
+	}
+
+	if serviceName != "" {
+		query += fmt.Sprintf(" AND service_name = $%d", argIdx)
+		args = append(args, serviceName)
+		argIdx++
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subscriptions for calculation: %w", err)
 	}
 	defer rows.Close()
 
-	var subscriptions []model.Subscription
-
+	var subs []model.Subscription
 	for rows.Next() {
-		var sub model.Subscription
-
-		err := rows.Scan(
-			&sub.ID,
-			&sub.ServiceName,
-			&sub.Price,
-			&sub.UserID,
-			&sub.StartDate,
-			&sub.CreatedAt,
-			&sub.UpdatedAt,
-		)
-
+		sub, err := scanSubscription(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan subscription: %w", err)
 		}
-
-		subscriptions = append(subscriptions, sub)
+		subs = append(subs, *sub)
 	}
-
-	return subscriptions, nil
+	return subs, nil
 }

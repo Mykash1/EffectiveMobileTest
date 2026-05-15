@@ -1,0 +1,474 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Subscriptions Aggregation Service",
+    "description": "REST-сервис для агрегации данных об онлайн подписках пользователей",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local server"
+    }
+  ],
+  "paths": {
+    "/subscriptions": {
+      "get": {
+        "summary": "Получить список подписок с пагинацией",
+        "description": "Возвращает постраничный список подписок",
+        "operationId": "listSubscriptions",
+        "tags": ["subscriptions"],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Номер страницы (начиная с 1)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "example": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Количество записей на странице (максимум 100)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10,
+              "example": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Постраничный список подписок",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка сервера",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Создать подписку",
+        "description": "Создает новую запись о подписке и возвращает её с присвоенным ID",
+        "operationId": "createSubscription",
+        "tags": ["subscriptions"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSubscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Подписка создана, возвращается с ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscription"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Неверный запрос",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/subscriptions/total": {
+      "get": {
+        "summary": "Подсчитать суммарную стоимость подписок",
+        "description": "Возвращает суммарную стоимость всех подписок за выбранный период с возможной фильтрацией по user_id и service_name",
+        "operationId": "calculateTotal",
+        "tags": ["subscriptions"],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "Начало периода (формат MM-YYYY)",
+            "schema": {
+              "type": "string",
+              "example": "01-2025"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "description": "Конец периода (формат MM-YYYY)",
+            "schema": {
+              "type": "string",
+              "example": "12-2025"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "Фильтр по ID пользователя (UUID)",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "60601fee-2bf1-4721-ae6f-7636e79a0cba"
+            }
+          },
+          {
+            "name": "service_name",
+            "in": "query",
+            "required": false,
+            "description": "Фильтр по названию сервиса",
+            "schema": {
+              "type": "string",
+              "example": "Yandex Plus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Суммарная стоимость",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Неверный запрос",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/subscriptions/{id}": {
+      "get": {
+        "summary": "Получить подписку по ID",
+        "description": "Возвращает запись о подписке по её идентификатору",
+        "operationId": "getSubscriptionById",
+        "tags": ["subscriptions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID подписки (UUID)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Подписка найдена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscription"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Подписка не найдена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Обновить подписку",
+        "description": "Обновляет запись о подписке по её идентификатору. Поддерживает частичное обновление.",
+        "operationId": "updateSubscription",
+        "tags": ["subscriptions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID подписки (UUID)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSubscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Подписка обновлена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscription"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Неверный запрос",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Подписка не найдена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Удалить подписку",
+        "description": "Удаляет запись о подписке по её идентификатору",
+        "operationId": "deleteSubscription",
+        "tags": ["subscriptions"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID подписки (UUID)",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Подписка удалена"
+          },
+          "404": {
+            "description": "Подписка не найдена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Subscription": {
+        "type": "object",
+        "required": ["id", "service_name", "price", "user_id", "start_date"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Уникальный идентификатор подписки"
+          },
+          "service_name": {
+            "type": "string",
+            "description": "Название сервиса, предоставляющего подписку",
+            "example": "Yandex Plus"
+          },
+          "price": {
+            "type": "integer",
+            "description": "Стоимость месячной подписки в рублях",
+            "example": 400,
+            "minimum": 1
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID пользователя",
+            "example": "60601fee-2bf1-4721-ae6f-7636e79a0cba"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Дата начала подписки"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Дата окончания подписки (опционально, null = активна)",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Дата создания записи"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Дата обновления записи"
+          }
+        }
+      },
+      "CreateSubscriptionRequest": {
+        "type": "object",
+        "required": ["service_name", "price", "user_id", "start_date"],
+        "properties": {
+          "service_name": {
+            "type": "string",
+            "description": "Название сервиса",
+            "example": "Yandex Plus"
+          },
+          "price": {
+            "type": "integer",
+            "description": "Стоимость в рублях",
+            "example": 400,
+            "minimum": 1
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID пользователя",
+            "example": "60601fee-2bf1-4721-ae6f-7636e79a0cba"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Дата начала (формат MM-YYYY)",
+            "example": "07-2025"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Дата окончания (формат MM-YYYY, опционально)",
+            "example": "12-2025",
+            "nullable": true
+          }
+        }
+      },
+      "UpdateSubscriptionRequest": {
+        "type": "object",
+        "description": "Все поля опциональны - передавайте только те, которые нужно обновить",
+        "properties": {
+          "service_name": {
+            "type": "string",
+            "description": "Название сервиса",
+            "example": "Yandex Plus"
+          },
+          "price": {
+            "type": "integer",
+            "description": "Стоимость в рублях",
+            "example": 500,
+            "minimum": 1
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Дата окончания (формат MM-YYYY). Пустая строка для удаления даты окончания.",
+            "example": "12-2025",
+            "nullable": true
+          }
+        }
+      },
+      "ListResponse": {
+        "type": "object",
+        "properties": {
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Subscription"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Общее количество подписок",
+            "example": 42
+          },
+          "page": {
+            "type": "integer",
+            "description": "Текущая страница",
+            "example": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Количество записей на странице",
+            "example": 10
+          }
+        }
+      },
+      "TotalResponse": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "description": "Суммарная стоимость подписок за период в рублях",
+            "example": 4800
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Описание ошибки"
+          }
+        }
+      }
+    }
+  }
+}

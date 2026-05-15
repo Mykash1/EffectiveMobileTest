@@ -6,7 +6,8 @@ import (
 )
 
 func New() *slog.Logger {
-	return slog.New(
-		slog.NewJSONHandler(os.Stdout, nil),
-	)
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})
+	return slog.New(handler)
 }

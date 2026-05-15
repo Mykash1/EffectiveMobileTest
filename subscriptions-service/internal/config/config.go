@@ -8,25 +8,40 @@ import (
 )
 
 type Config struct {
-	AppPort string
-	DBUrl   string
+	AppPort    string
+	DBUrl      string
+	DBHost     string
+	DBPort     string
+	DBUser     string
+	DBPassword string
+	DBName     string
+	DBSSLMode  string
 }
 
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		AppPort: os.Getenv("APP_PORT"),
-		DBUrl: fmt.Sprintf(
-			"postgres://%s:%s@%s:%s%s&sslomode=%s",
-			os.Getenv("DB_USER"),
-			os.Getenv("DB_PASSWORD"),
-			os.Getenv("DB_HOST"),
-			os.Getenv("DB_PORT"),
-			os.Getenv("DB_NAME"),
-			os.Getenv("DB_SSLMODE"),
-		),
+		AppPort:    getEnv("APP_PORT", "8080"),
+		DBHost:     getEnv("DB_HOST", "localhost"),
+		DBPort:     getEnv("DB_PORT", "5432"),
+		DBUser:     getEnv("DB_USER", "postgres"),
+		DBPassword: getEnv("DB_PASSWORD", "postgres"),
+		DBName:     getEnv("DB_NAME", "subscriptions"),
+		DBSSLMode:  getEnv("DB_SSLMODE", "disable"),
 	}
 
+	cfg.DBUrl = fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBSSLMode,
+	)
+
 	return cfg, nil
+}
+
+func getEnv(key, fallback string) string {
+	if val, ok := os.LookupEnv(key); ok {
+		return val
+	}
+	return fallback
 }
